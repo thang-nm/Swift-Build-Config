@@ -8,18 +8,18 @@
 
 import Foundation
 
-let prefix = "CG_"
+let prefix = "APP_"
 let processInfo = ProcessInfo()
 
 guard
   let outputFile = processInfo.environment.first(where: { $0.key == "SCRIPT_OUTPUT_FILE_0" })?.value,
   let outputUrl = URL(string: "file://" + outputFile)
 else {
-  print("error: Please add valid configuration output file")
+  print("error: Please add valid configuration output file path")
   exit(1)
 }
 
-func toCamel(_ string: String) -> String {
+func camelCase(_ string: String) -> String {
   return string
     .split(separator: "_")
     .map { String($0) }
@@ -29,16 +29,19 @@ func toCamel(_ string: String) -> String {
 }
 
 func escape(_ string: String) -> String {
-  return string.replacingOccurrences(of: "\\", with: "\\\\")
+  return string
+    .replacingOccurrences(of: "\\", with: "\\\\")
     .replacingOccurrences(of: "\"", with: "\\\"")
 }
 
 let className = outputUrl.deletingPathExtension().lastPathComponent
-let expression = "  static let %@ = "
+let letExpression = "  static let %@ = "
 let template = """
 // Auto-generated file. DON'T modify!
-
 // swiftlint:disable all
+
+import Foundation
+
 struct \(className) {
   private init() {}
 %@
@@ -52,20 +55,33 @@ let variables = processInfo.environment.filter {
 variables.forEach {
   let name = String($0.key.dropFirst(prefix.count))
   let value = $0.value
-  var exp = expression
+  let swiftPrefix = "swift:"
+  var exp = letExpression
 
-  if let intValue = Int(value) {
+  if value.hasPrefix(swiftPrefix) {
+    let startIndex = value.index(value.startIndex, offsetBy: swiftPrefix.count)
+    let code = value.suffix(from: startIndex).trimmingCharacters(in: .whitespaces)
+    if code.contains("{") && code.hasSuffix  ("}") {
+      exp = "  static var %@: " + code
+    } else {
+      exp = "  static let %@: " + code
+    }
+
+  } else if let intValue = Int(value) {
     exp += String(intValue)
+
   } else if let doubleValue = Double(value) {
     exp += String(doubleValue)
+
   } else if let boolValue = Bool(value) {
     exp += String(boolValue)
+
   } else {
     let replacement = value.replacingOccurrences(of: "\\/", with: "/")
     exp += "\"" + escape(replacement) + "\""
   }
 
-  lines.append(String(format: exp, toCamel(name)))
+  lines.append(String(format: exp, camelCase(name)))
 }
 
 do {
